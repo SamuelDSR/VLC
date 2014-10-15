@@ -1,17 +1,23 @@
 %% generate random signal
-Nsym = 100000;  % number of cap symbols
+%number of OFDM symbols
+Nsym = 10000;  
+%aco ofdm params
+subcar = 15;
+cp_size = 3;
 nBitPerSymbol = 4;
+
+%using FEC or not
 FEC_Coding = 0;
 
 generator = @random_bin_generator;
-in_data =  vlc_source_generate(Nsym*nBitPerSymbol, generator);
+in_data =  vlc_source_generate(Nsym*nBitPerSymbol*subcar, generator);
 
 %% Encoding (interleaving / Forward Error Encoding)
 %FEC coding
 if FEC_Coding ~= 0
     encoder = @conv_encoder;
     [enc_data, CodeTrellis] = vlc_encode(in_data, encoder, []);
-    
+ 
     % interleaving
     table_size = 10;
     interleave_table = interleav_matrix(ones(1, table_size));
@@ -27,12 +33,10 @@ ModOrder = 2^nBitPerSymbol;
 modulator = @qam_modulator;
 [mod_data, qam_handle] = vlc_modulate(enc_data, modulator, ModOrder);
 
-%CAP modulator
-FilterSpan = 8;
-UpSamplingFactor = 4;
-modulator_param = [FilterSpan,UpSamplingFactor];
-modulator = @cap_modulator;
-[mod_data, cap_filters] = vlc_modulate(mod_data, modulator, modulator_param);
+%ACO-OFDM modulator
+aco_params = [subcar,cp_size];
+modulator = @aco_ofdm_modulator;
+[mod_data, blk_size] = vlc_modulate(mod_data, modulator, aco_params);
 
 %% LED filtering
 led = [];
@@ -47,13 +51,14 @@ pd = [];
 detect_data = vlc_pd_filter(rx_data, pd);
 
 %% Add gaussian noise
-EbNo = 20;
-SNR = EbNo + 10*log10(nBitPerSymbol) - 10*log10(UpSamplingFactor);
-detect_data = awgn(detect_data,SNR,'measured');
+
+EbNo = 20; 
+snr = EbNo + 10*log10(subcar/blk_size) + 10*log10(log2(ModOrder));
+detect_data = awgn(detect_data,snr,'measured');
 
 %% Demodulation
-demodulator = @cap_demodulator;
-demod_data  = vlc_demodulate(detect_data, demodulator, cap_filters);
+demodulator = @aco_ofdm_demodulator;
+demod_data  = vlc_demodulate(detect_data, demodulator, aco_params);
 
 demodulator = @qam_demodulator;
 demod_data  = vlc_demodulate(demod_data, demodulator, qam_handle);

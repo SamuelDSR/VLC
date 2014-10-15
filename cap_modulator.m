@@ -18,8 +18,8 @@ inphase_pulse = inphase_pulse/max(abs(inphase_pulse));
 quadrature_pulse = quadrature_pulse/max(abs(quadrature_pulse));
 
 cap_filters = cell(1,3);
-cap_filters(1) = mat2cell(inphase_pulse);
-cap_filters(2) = mat2cell(quadrature_pulse);
+cap_filters(1) = {inphase_pulse};
+cap_filters(2) = {quadrature_pulse};
 cap_filters(3) = {UpSamplingFactor};
 
 % real and imaginary separation
