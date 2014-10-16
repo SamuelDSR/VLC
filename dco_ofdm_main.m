@@ -1,5 +1,3 @@
-close all;
-clear all;
 %% generate random signal
 %number of OFDM symbols
 Nsym = 10000;  
@@ -36,16 +34,16 @@ modulator = @qam_modulator;
 [mod_data, qam_handle] = vlc_modulate(enc_data, modulator, ModOrder);
 
 %ACO-OFDM modulator
-aco_params = [subcar,cp_size];
-modulator = @aco_ofdm_modulator;
-[mod_data, blk_size] = vlc_modulate(mod_data, modulator, aco_params);
+dco_params = [subcar,cp_size];
+modulator = @dco_ofdm_modulator;
+[mod_data, blk_size] = vlc_modulate(mod_data, modulator, dco_params);
 
 %% LED filtering
-led.dc_bias = 0;
+led.dc_bias = 2;
 led.min = 0;
 led.max = 100;
-led_filter=@aco_ofdm_led_filter;
-tx_data  = vlc_led_filter(mod_data, led_filter,led);
+led_filter=@dco_ofdm_led_filter;
+tx_data  = vlc_led_filter(mod_data, led_filter, led);
 
 %% channel filtering
 channel = [];
@@ -62,8 +60,8 @@ snr = EbNo + 10*log10(subcar/blk_size) + 10*log10(log2(ModOrder));
 detect_data = awgn(detect_data,snr,'measured');
 
 %% Demodulation
-demodulator = @aco_ofdm_demodulator;
-demod_data  = vlc_demodulate(detect_data, demodulator, aco_params);
+demodulator = @dco_ofdm_demodulator;
+demod_data  = vlc_demodulate(detect_data, demodulator, dco_params);
 
 demodulator = @qam_demodulator;
 demod_data  = vlc_demodulate(demod_data, demodulator, qam_handle);
