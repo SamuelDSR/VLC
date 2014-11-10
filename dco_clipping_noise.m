@@ -1,0 +1,9 @@
+function noiseVar = dco_clipping_noise(signalVar,bottom,top)
+lamdaBottom = bottom/sqrt(signalVar);
+lamdaTop = top/sqrt(signalVar);
+K = qfunc(lamdaBottom) - qfunc(lamdaTop);
+noiseVar = K - K^2;
+noiseVar = noiseVar - (pmf_gauss(lamdaBottom)-pmf_gauss(lamdaTop)+(1-qfunc(lamdaBottom))*lamdaBottom + qfunc(lamdaTop)*lamdaTop)^2;
+noiseVar = noiseVar + (1-qfunc(lamdaBottom))*lamdaBottom^2 + qfunc(lamdaTop)*lamdaTop^2;
+noiseVar = noiseVar + pmf_gauss(lamdaBottom)*lamdaBottom - pmf_gauss(lamdaTop)*lamdaTop;
+noiseVar = signalVar*noiseVar;
