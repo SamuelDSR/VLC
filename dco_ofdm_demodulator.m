@@ -2,6 +2,8 @@ function out = dco_ofdm_demodulator(in, demod_params)
 %get params
 subcar   = demod_params(1);
 cp_size  = demod_params(2);
+attenuation = demod_params(3);
+
 fft_size = (subcar+1)*2; % FFT size (this relation is only true in ACO-OFDM)
 blk_size = fft_size+cp_size;  % OFDM symbol length
 
@@ -17,6 +19,9 @@ if mod(length(in),blk_size) == 0
         
         % cp removal
         in_rmcp = in_blk(cp_size+1:end);
+        
+        % composenate the attenuation
+        in_rmcp = in_rmcp/attenuation;
         
         % fft
         in_fft = fft(in_rmcp);

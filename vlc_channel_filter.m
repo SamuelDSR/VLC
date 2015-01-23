@@ -1,3 +1,3 @@
 function out = vlc_channel_filter(in, channel)
-out = in;
+out = filter(channel,1,in);
 end

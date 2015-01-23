@@ -1,3 +1,3 @@
 function out = vlc_pd_filter(in, pd)
-out = in;
+out = filter(pd,1,in);
 end
