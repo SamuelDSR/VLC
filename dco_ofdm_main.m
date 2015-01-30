@@ -1,166 +1,197 @@
 clear all;
 close all;
+
+addpath('utils');
 %% Parameters
-%using FEC or not
-FEC_Coding = 0;
 
-%SNR
-N0 = 10^-21;  % spectral density level of gaussian noise at the receiver
-B = 100*10^6;  % signal bandwidth B = 20MHz
+% Using FEC or not
+FECcoding = 0;
 
-SNR = 100:5:140; %dB, Desired electrical SNR per bit before clipping at the transmitter (excluding the dc_bias)
+%% Power and Noise
 
-%DCO-OFDM params
-Nsym = 10000;  %number of OFDM symbols
-FFT_size = 128;
-cp_size = 16;
-subcar = FFT_size/2-1;
+N0          = 10^-21;            % spectral density level of gaussian noise at the receiver
+B           = 100*10^6;          % signal bandwidth B = 20MHz
+totalPower  = 1;             % total available electrical power = E[x(n)_elec^2] or = E[x(k).*conj(x(k))]
 
-nBitPerSymbol = 2;
-yita = nBitPerSymbol*subcar/(FFT_size+cp_size); % Spectral efficiency
+SNR         = 120;               % dB, Pre Desired electrical SNR per bit before clipping at the transmitter (excluding the dc_bias)
 
-%LED params
-led.min = 0.1; % A
-led.max = 1; % A
-led.dc_bias=0.19;
+%% DCO-OFDM params
 
-%LED filter (Tx filter)
-% type of led filter, impulse response h(t) = exp(-2*pi*fc*t) where fc is the 3dB cutoff frequency
-led_fc = 5*10^6; 
-led_order = 32; % 32 is enough
-led_filter = led_lp_channel(led_order,led_fc/B,1);
+nOfdmSymbol = 10000;               % number of OFDM symbols
+FFTsize     = 128;               % fft size
+cpSize      = 32;                % cyle prefix size
+nSubcar     = FFTsize/2-1;       % number of subcarrier
 
-% %VLC channel filter
-% vlc_filter = [];
-vlc_filter = 4*10^-6; %Dirac channel
+%% LED params
 
-%Rx filter, considered as Diracs with a certain responsitivity
+led.minCurrent = 0.1;            % minimun turn-on forward current of LED
+led.maxCurrent = 1;            % maximum forward current of LED
+led.dcBias     = 0.5;             % DC bias
+
+%% LED filter (frequency response of LED)
+%low pass filter type impulse response h(t) = exp(-2*pi*fc*t) where fc is the 3dB cutoff frequency
+ledCutoffFrequecy = 5*10^6;
+ledFilterOrder = 32;             %32 is enough
+ledFilterCoeff = led_lp_channel(ledFilterOrder,ledCutoffFrequecy/B,1);
+
+%% VLC channel filter
+
+%Dirac channel type
+vlcFilterCoeff = 4*10^-6; %Dirac channel
+
+%Responsitivity of PD (PD filter considered as a Dirac channel)
 pd = 1;
 
-tot_channel = pd*conv(led_filter,vlc_filter);
+%total equivalent channel
+totalChannelCoeff = pd*conv(ledFilterCoeff,vlcFilterCoeff);
+%totalChannelCoeff = pd*vlcFilterCoeff;
 
-%% Bit and power loading (Bit and power loading algorithmes doesn't include the clipping effect)   
+%frequency response of total equivalent channel 
+totalChannelFR = abs(fft(totalChannelCoeff,FFTsize));
 
-% waterfilling algorithms, only power loading included 
-[Capacity PowerAllocated] = ofdmwaterfilling(...
-    subcar,totalPower,channelStateInformation,bandwidth,noiseDensity)
+channelStateInformation = totalChannelFR(2:(nSubcar+1)); %Not sure, correct
 
+%preSNR_elec = 10*log10(totalPower*vlc_filter^2/B/N0);
 
-%Simulation results pre-allocation
-SNR_elec = zeros(size(SNR));
-SNR_elec_nodc = zeros(size(SNR));
-SNR_opt = zeros(size(SNR));
-BER = zeros(size(SNR));
+%% Bit and power loading (Bit and power loading algorithmes doesn't include the clipping effect)
 
-PAPR_dB = zeros(size(SNR));
+% Waterfilling algorithms, only power loading included
+[Capacity, powerAlloc] = ofdm_waterfilling(nSubcar,totalPower,channelStateInformation,B,N0);
+%powerAlloc = totalPower/nSubcar*ones(nSubcar,1);
+% Fixed QAM constellation, no bit loading
+nBitsPerSymbol = 2;                                  % number of bit per QAM symbol 
+yita = nBitsPerSymbol*nSubcar/(FFTsize+cpSize);      % Spectral efficiency
+bitAlloc    = nBitsPerSymbol*ones(nSubcar,1);
 
+% Campello-levin algorithmes
+
+%% Simulation results pre-allocation
+
+SNRelec     = zeros(size(SNR));        % Electrical SNR including DC-bias (At the Tx)
+SNRelecNoDC = zeros(size(SNR));        % Electrical SNR excluding DC-bias (At the Tx)
+SNRoptical  = zeros(size(SNR));        % Optical SNR including DC-bias    (At the Tx)
+BER         = zeros(size(SNR));        % BER
+PAPRdb      = zeros(size(SNR));        % PAPR, in dB
+
+%% Simulation Routine
 for k = 1:length(SNR)
     
     %% generate random signal
+    
     generator = @random_bin_generator;
-    in_data =  vlc_source_generate(Nsym*nBitPerSymbol*subcar, generator);
+    inData =  vlc_source_generate(nOfdmSymbol*nBitsPerSymbol*nSubcar, generator);
     
     %% Encoding (interleaving / Forward Error Encoding)
+    
     %FEC coding
-    if FEC_Coding ~= 0
+    if FECcoding ~= 0
         encoder = @conv_encoder;
-        [enc_data, CodeTrellis] = vlc_encode(in_data, encoder, []);
+        [encData, CodeTrellis] = vlc_encode(inData, encoder, []);
         
         % interleaving
-        table_size = 10;
-        interleave_table = interleav_matrix(ones(1, table_size));
+        tableSize = 10;
+        interleaveTable = interleav_matrix(ones(1, tableSize));
         encoder = @interleaving;
-        [enc_data, gain] = vlc_encode(enc_data, encoder, interleave_table);
+        [encData, gain] = vlc_encode(encData, encoder, interleaveTable);
     else
-        enc_data = in_data;
+        encData = inData;
     end
     
-    %% Modulation
-    %QAM modulator
-    ModOrder = 2^nBitPerSymbol;
+    %% bit and power loading QAM modulator
+    
     modulator = @qam_modulator;
-    [mod_data, qam_handle] = vlc_modulate(enc_data, modulator, ModOrder);
+    qamParams{1} = bitAlloc;
+    qamParams{2} = powerAlloc;
+    [modData, remBits] = vlc_modulate(encData, modulator, qamParams);
     
-    %DCO-OFDM modulator
-    dco_params = [subcar,cp_size];
+    %% DCO-OFDM modulator
+    
+    dcoModParams = [nSubcar,cpSize];
     modulator = @dco_ofdm_modulator;
-    [mod_data, blk_size] = vlc_modulate(mod_data, modulator, dco_params);
+    [modData, blkSize] = vlc_modulate(modData,modulator,dcoModParams);
     
-    %% Scaling the signal for matching the desired SNR 
-    P_elec = B*yita*N0*10^(SNR(k)/10);
-    signal_amp_moyen = sum(mod_data)/length(mod_data);
-    signal_var = sum(mod_data.^2)/length(mod_data);
-    signal_peak = max(mod_data.^2);
-    PAPR_dB(k) = 10*log10(signal_peak/signal_var);
-     
-    alpha = sqrt(P_elec/signal_var); %scaling factor for fitting to the LED modulation interval
-    mod_data = alpha*mod_data;
+    %% Scaling  
+    
+    % P_elec = B*yita*N0*10^(SNR(k)/10);
+    % signal_amp_moyen = sum(modData)/length(modData);
+    % signal_var = sum(modData.^2)/length(modData);
+    % signal_peak = max(modData.^2);
+    % PAPRdb(k) = 10*log10(signal_peak/signal_var);
+    % alpha = sqrt(P_elec/signal_var); %scaling factor for fitting to the LED modulation interval
+    % modData = alpha*modData;
     
     %% LED Clipping
+    
     %lamda = 1.5;
     %led.dc_bias = lamda*sqrt(P_elec)+led.min %set the dc bias according to the signal variance    
     led_clipping=@dco_ofdm_led_filter;
-    tx_data  = vlc_led_filter(mod_data, led_clipping, led);
+    txData  = vlc_led_filter(modData, led_clipping, led);
     
-    %% Calculating the Average P_elec and Average P_opt after LED filter
-    P_elec_avg = sum(tx_data.^2)/length(tx_data);  %signal elec after clipping including dc-bias
-    P_elec_avg_nodc = sum((tx_data-led.dc_bias).^2)/length(tx_data); %signal elec after clipping excluding dc-bias
-    P_opt_avg = sum(tx_data)/length(tx_data);
+    %% Calculating the Average P_elec and Average P_opt at transmitter after LED filter
     
-    SNR_elec(k) = 10*log10(P_elec_avg/(N0*B*yita));
-    SNR_elec_nodc(k) = 10*log10(P_elec_avg_nodc/(N0*B*yita));
-    SNR_opt(k) = 10*log10(P_opt_avg/(N0*B*yita));
+    P_elec_avg          = sum(txData.^2)/length(txData);                %signal elec after clipping including dc-bias
+    P_elec_avg_nodc     = sum((txData-led.dcBias).^2)/length(txData);  %signal elec after clipping excluding dc-bias
+    P_opt_avg           = sum(txData)/length(txData);
+    
+    SNRelec(k)          = 10*log10(P_elec_avg/(N0*B*yita));
+    SNRelecNoDC(k)      = 10*log10(P_elec_avg_nodc/(N0*B*yita));
+    SNRoptical(k)       = 10*log10(P_opt_avg/(N0*B*yita));
     
     %figure;
     %plot(tx_data(1:100*blk_size));
     
     %% led and vlc channel filtering
-    imp_res = conv(vlc_filter,led_filter); 
-    rx_data  = vlc_channel_filter(tx_data, imp_res);
     
-    %% detection using receiver filter
-    pd = 1; %assuming
-    detect_data = vlc_pd_filter(rx_data, pd);
+    rxData              = vlc_channel_filter(txData,totalChannelCoeff);
     
     %% Add gaussian noise
-    noise_var = B*N0;
-    detect_data = detect_data + sqrt(noise_var)*randn(size(detect_data));
+    
+    noise_var           = B*N0;
+    %detectData          = rxData + sqrt(noise_var)*randn(size(rxData));
+    detectData = rxData;
     
     %% Demodulation
-    pilot_info = alpha*vlc_filter*pd;
-    dco_params(3) = pilot_info;
     
-    demodulator = @dco_ofdm_demodulator;
-    demod_data  = vlc_demodulate(detect_data, demodulator, dco_params);
+    % DCO-Demodulation
+    dcoDemodParams(1)   = {totalChannelCoeff};
+    dcoDemodParams(2)   = {cpSize};  
+    dcoDemodParams(3)   = {nSubcar};
+    demodulator         = @dco_ofdm_demodulator;
+    demodData           = vlc_demodulate(detectData, demodulator, dcoDemodParams);
     
-    demodulator = @qam_demodulator;
-    demod_data  = vlc_demodulate(demod_data, demodulator, qam_handle);
+    % QAM Demodulation
+    qamDemodParams(1)   = {bitAlloc};
+    qamDemodParams(2)   = {powerAlloc};
+    demodulator         = @qam_demodulator;
+    demodData           = vlc_demodulate(demodData, demodulator, qamDemodParams);
     
     %% Decoding
-    if FEC_Coding ~= 0 
-        
+    
+    if FECcoding ~= 0         
         deleaving = @de_interleaving;
-        deleav_data = vlc_decode(demod_data, deleaving, interleave_table);
+        deleav_data = vlc_decode(demodData, deleaving, interleaveTable);
         
         decoder = @conv_decoder;
-        decoder_data= vlc_decode(deleav_data, decoder, CodeTrellis);
+        decoderData= vlc_decode(deleav_data, decoder, CodeTrellis);
     else
-        decoder_data = demod_data;
+        decoderData = demodData;
     end
     
-    %% System analysis
-    [number_of_errors,bit_error_rate] = biterr(in_data,decoder_data);
+    %% System analysis   
+    
+    [number_of_errors,bit_error_rate] = biterr(inData(1:end-remBits),decoderData);  % remBits not transmitted, should deduted
     BER(k) = bit_error_rate;
+    
 end
-
-%BER
+BER
 
 %% Plot
-figure;
-semilogy(SNR_elec,BER,'r');
 
-figure;
-semilogy(SNR_elec_nodc,BER,'g');
-
-figure;
-semilogy(SNR_opt,BER,'b');
+% figure;
+% semilogy(SNRelec,BER,'r');
+% 
+% figure;
+% semilogy(SNRelecNoDC,BER,'g');
+% 
+% figure;
+% semilogy(SNRoptical,BER,'b');

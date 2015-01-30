@@ -1,29 +1,27 @@
-function [out, blk_size] = dco_ofdm_modulator(in, modulator_params)
+function [out, blkSize] = dco_ofdm_modulator(in, modulator_params)
 % get parameters
-subcar   = modulator_params(1);
-cp_size  = modulator_params(2);
-fft_size = (subcar+1)*2;
+nSubcar     = modulator_params(1);
+cpSize      = modulator_params(2);
+fftSize     = (nSubcar+1)*2;
 
-if mod(length(in),subcar) == 0  
+if rem(length(in),nSubcar) == 0
     
-    Nsym = length(in)/subcar;
+    nOfdmSymbol = length(in)/nSubcar;   
+    blkSize     = fftSize+cpSize;
+    out         = zeros(nOfdmSymbol*blkSize,1);  %pre-allocate memeory
     
-    blk_size = fft_size+cp_size;
-    
-    out = zeros(Nsym*blk_size,1);  %pre-allocate memeory
-    
-    for i = 1:Nsym
+    for i = 1:nOfdmSymbol
   
-        in_temps = in(1+(i-1)*subcar:i*subcar);
+        in_temps        = in(1+(i-1)*nSubcar:i*nSubcar);
         
         % pilot insertion and hermetian sysmetry to ensure a real data after FFT
-        pilot_ins_data = [0; in_temps;  0; (fliplr(conj(in_temps)'))'];
+        pilot_ins_data  = [0; in_temps;  0; (fliplr(conj(in_temps)'))'];
 
-        % fourier transform time doamain data
-        IFFT_data =ifft(pilot_ins_data);
+        % fourier transform time domain data (note that we multiply a factor of sqrt(FFT Size) to make sure we have same average energy after IFFF)
+        IFFT_data       = sqrt(fftSize)*ifft(pilot_ins_data);
         
         % add cycle prefix 
-        out((i-1)*blk_size+1:i*blk_size) = [IFFT_data(end-cp_size+1:end); IFFT_data];
+        out((i-1)*blkSize+1:i*blkSize) = [IFFT_data(end-cpSize+1:end); IFFT_data];
     end
 else
     error('DCO-OFDM wrong input size for modulation');

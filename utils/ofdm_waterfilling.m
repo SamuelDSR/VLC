@@ -1,4 +1,4 @@
-function [shanonCapacity powerAllocated] = ofdmwaterfilling(nSubChannel,totalPower,channelStateInformation,bandwidth,noiseDensity)
+function [shanonCapacity powerAllocated] = ofdm_waterfilling(nSubChannel,totalPower,channelStateInformation,bandwidth,noiseDensity)
 %==========================================================================
 % by:
 %   Hamid Ramezani
@@ -88,15 +88,15 @@ shanonCapacity = bandwidth/nSubChannel * ...
 % By observing the figure, it is clear that the power like water fills the
 % container which is made by noise to carrier ratio or channel state
 % information
-f1 = figure(1);
-clf;
-set(f1,'Color',[1 1 1]);
-bar((initPowerAllo + 1./carrierToNoiseRatio),1,'r')
-hold on;
-bar(1./carrierToNoiseRatio,1);
-xlabel('subchannel indices');
-title('Water filling algorithm')
-
-legend('amount of power allocated to each subchannel',...
-    'Noise to Carrier Ratio')
+% f1 = figure(1);
+% clf;
+% set(f1,'Color',[1 1 1]);
+% bar((initPowerAllo + 1./carrierToNoiseRatio),1,'r')
+% hold on;
+% bar(1./carrierToNoiseRatio,1);
+% xlabel('subchannel indices');
+% title('Water filling algorithm')
+% 
+% legend('amount of power allocated to each subchannel',...
+%     'Noise to Carrier Ratio')
 
