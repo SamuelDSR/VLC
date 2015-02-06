@@ -3,123 +3,142 @@
 % each subchannel optimally.
 % Input:
 %       bitAlloc    : initial bit allocation scheme
-%       powerAlloc  : initital power allocation scheme
 %       gap         : channel gap
 %       gainToNoise : channel gain of sub channel versus Noise 
 %       nSubcar     : total Number of sub channel
 %       maxOrder    : max constellation size
 
-function [bitAlloc, energyAlloc] = campello_algo(bitAlloc,energyAlloc,gap,gainToNoise,nSubcar,totalEnergy,maxOrder)
+function [bitAlloc, powerAlloc] = campello_algo(bitAlloc,gap,gainToNoise,nSubcar,totalPower,maxOrder)
 
-%% calculation of energy table
+%% calculation of power table
 % add two rows (bit=0,Energy=0) and(bit=maxOrder+1,Energy=Inf) for convience in programming
-energyTable = zeros(maxOrder+2,nSubcar);
+powerTable = zeros(maxOrder+2,nSubcar);
 for i = 1:nSubcar
     for j = 2:maxOrder+1
-        energyTable(i,j) = 2*gap*gainToNoise(i)*(2^j-1);
+        powerTable(j,i) = 2*gap*(2^j-1)/gainToNoise(i);
     end
 end
-energyTable(maxOrder+2:i) = Inf;
+powerTable(maxOrder+2,:) = Inf;
 
-%% calculationb of incremental energy table
+%% calculation of incremental energy table
 
-increEnergyTable = zeros(maxOrder+2,nSubcar);  
+increPowerTable = zeros(maxOrder+2,nSubcar);  
 for i = 2:maxOrder+2
-    increEnergyTable(i,:) = energyTable(i,:) - energyTable(i-1,:);
+    increPowerTable(i,:) = powerTable(i,:) - powerTable(i-1,:);
 end
 
 
 %% current array of energy gained to decrease one bit
 bitDecreaseTable = zeros(1,nSubcar);
 for i = 1:nSubcar
-    bitDecreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);  %here, plus 1 because in matlab array indice begin with 1
+    bitDecreaseTable(i) = increPowerTable(bitAlloc(i)+1,i);  %here, plus 1 because in matlab array indice begin with 1
 end
 % max energy gained to decrease one bit and the correspondant subcar indice
-[maxDecreaseEnergy, maxIndice] = min(bitDecreaseTable);
+[maxDecreasePower, maxIndice] = max(bitDecreaseTable);
 
 %% current array of energy needed to increase one bit
 bitIncreaseTable = zeros(1,nSubcar);
 for i = 1:nSubcar
-    bitIncreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);
+    bitIncreaseTable(i) = increPowerTable(bitAlloc(i)+2,i);
 end
 % min energy needed to increase one bit and the correspondant subcar indice
-[minIncreaseEnergy, minIndice] = min(bitIncreaseTable);
+[minIncreasePower, minIndice] = min(bitIncreaseTable);
 
 %% step of efficientizing
-while minIncreaseEnergy < maxDecreaseEnergy
+while minIncreasePower < maxDecreasePower
     % change bit loading scheme
     bitAlloc(minIndice) = bitAlloc(minIndice)+1;
     bitAlloc(maxIndice) = bitAlloc(maxIndice)-1;
     % updating
     for i = 1:nSubcar
-        bitDecreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);
+        bitDecreaseTable(i) = increPowerTable(bitAlloc(i)+1,i);
     end
-    [maxDecreaseEnergy, maxIndice] = min(bitDecreaseTable);
+    [maxDecreasePower, maxIndice] = max(bitDecreaseTable);
     
     bitIncreaseTable = zeros(1,nSubcar);
     for i = 1:nSubcar
-        bitIncreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);
+        bitIncreaseTable(i) = increPowerTable(bitAlloc(i)+2,i);
     end
-    [minIncreaseEnergy, minIndice] = min(bitIncreaseTable);
+    [minIncreasePower, minIndice] = min(bitIncreaseTable);
+    %     minIncreasePower
+    %     maxDecreasePower
 end
 
-%% current Energy allocation table
-currentEnergy  = 0;
+%% current Power allocation table
+currentPower  = 0;
 for i=1:nSubcar
-    currentEnergy = currentEnergy+energyTable(bitAlloc(i),i);
+    currentPower = currentPower+powerTable(bitAlloc(i)+1,i);
 end
 
 %% step of tighting (to satisfait the total energy constraint)
 
-while  currentEnergy < totalEnergy || currentEnergy >= minIncreaseEnergy
+while  totalPower-currentPower < 0 || totalPower-currentPower >= minIncreasePower
     
-    if currentEnergy < totalEnergy % energy exceeding limit
-        currentEnergy = currentEnergy - maxDecreaseEnergy;
+    if totalPower-currentPower < 0 % energy exceeding limit
+        currentPower = currentPower - maxDecreasePower;
         bitAlloc(maxIndice) = bitAlloc(maxIndice)-1;
         % updating
         for i = 1:nSubcar
-            bitDecreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);
+            bitDecreaseTable(i) = increPowerTable(bitAlloc(i)+1,i);
         end
-        [maxDecreaseEnergy, maxIndice] = min(bitDecreaseTable);
+        [maxDecreasePower, maxIndice] = max(bitDecreaseTable);
         
         bitIncreaseTable = zeros(1,nSubcar);
         for i = 1:nSubcar
-            bitIncreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);
+            bitIncreaseTable(i) = increPowerTable(bitAlloc(i)+2,i);
         end
-        [minIncreaseEnergy, minIndice] = min(bitIncreaseTable);
+        [minIncreasePower, minIndice] = min(bitIncreaseTable);
         
     else
-        currentEnergy = currentEnergy + minIncreaseEnergy;
+        currentPower = currentPower + minIncreasePower;
         bitAlloc(minIndice) = bitAlloc(minIndice)+1;
         % updating
         for i = 1:nSubcar
-            bitDecreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);
+            bitDecreaseTable(i) = increPowerTable(bitAlloc(i)+1,i);
         end
-        [maxDecreaseEnergy, maxIndice] = min(bitDecreaseTable);
+        [maxDecreasePower, maxIndice] = max(bitDecreaseTable);
         
         bitIncreaseTable = zeros(1,nSubcar);
         for i = 1:nSubcar
-            bitIncreaseTable(i) = increEnergyTable(bitAlloc(i)+1,i);
+            bitIncreaseTable(i) = increPowerTable(bitAlloc(i)+2,i);
         end
-        [minIncreaseEnergy, minIndice] = min(bitIncreaseTable);
+        [minIncreasePower, minIndice] = min(bitIncreaseTable);
     end
 end
 
 % get the energy allocation scheme
-
+powerAlloc = zeros(nSubcar,1);
 for  i=1:nSubcar
-    energyAlloc = energyTable(bitAlloc(i)+1,i);
+    powerAlloc(i) = powerTable(bitAlloc(i)+1,i);
 end
 
 %% assign the left energy
 
-leftEnergy1 = totalEnergy - currentEnergy;
-leftEnergy2 = totalEnergy - sum(energyAlloc);
-leftEnergy2
+leftPower1 = totalPower - currentPower;
+leftPower2 = totalPower - sum(powerAlloc);
+leftPower2
 
-if leftEnergy1 == leftEnergy  % assign the additional power evenly to all subcar
-    energyAlloc = energyAlloc + leftEnergy1/nSubcar;  
+if abs(leftPower1-leftPower2)<1e-10  % assign the additional power evenly to all modulated sub carrier
+    nModSubcar = find(bitAlloc~=0);
+    powerAlloc(nModSubcar) = powerAlloc(nModSubcar) + leftPower1/length(nModSubcar);
 else
     error('Something is wrong about the bit-power loading algorithme, check the program');
 end
     
+%% visualization of power-bit loading
+figure
+bar(1:nSubcar,powerAlloc+1./gainToNoise,1,'r')
+hold on;
+bar(1./gainToNoise,1);
+xlabel('subchannel indices');
+title('Power loading')
+legend('amount of power allocated to each subchannel',...
+    'Noise to Carrier Gain Ratio')
+
+figure
+bar(1:nSubcar,bitAlloc);
+xlabel('subchannel indices');
+title('Bit loading')
+legend('constellation size of each subchannel')
+
+

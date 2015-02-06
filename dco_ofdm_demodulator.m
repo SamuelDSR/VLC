@@ -9,11 +9,11 @@ blkSize = fftSize+cpSize;   % OFDM symbol length including Cycle Prefix
 
 if mod(length(in),blkSize) == 0  
     
-    nSymbol = length(in)/blkSize;
+    nOfdmSymbol = length(in)/blkSize;
     
-    out = zeros(nSymbol*nSubcar,1);  %pre-allocate memeory
+    out = zeros(nOfdmSymbol*nSubcar,1);  %pre-allocate memeory
     
-    for i = 1:nSymbol
+    for i = 1:nOfdmSymbol
   
         inBlk = in(1+(i-1)*blkSize:i*blkSize);
         
@@ -24,9 +24,9 @@ if mod(length(in),blkSize) == 0
         inFFT = 1/sqrt(fftSize)*fft(inCpRemove);
         
         % one tap equalization
-        totalChannelFR      = abs(fft(totalChannelCoeff,fftSize));
-        estimateChannelFR   = totalChannelFR(2:nSubcar+1);
-        inFFT(2:nSubcar+1)  = inFFT(2:nSubcar+1)./estimateChannelFR;
+%         totalChannelFR      = fft(totalChannelCoeff,fftSize);
+%         estimateChannelFR   = totalChannelFR(2:nSubcar+1);
+%         inFFT(2:nSubcar+1)  = inFFT(2:nSubcar+1)./estimateChannelFR;
         
         % pilot removal for DCO-OFDM
         inPilotRemove = inFFT(2:nSubcar+1);
